@@ -192,12 +192,30 @@ namespace NW
     /// </summary>
     public abstract class SurfaceControl : Panel
     {
+        private Color _backFill = Color.Empty;
+
         /// <summary>
-        /// Colour painted behind this control; empty means paint nothing.
-        /// It must match whatever the control sits on, otherwise a rounded
-        /// corner shows up as a square edge.
+        /// Colour painted behind this control. It must match whatever the
+        /// control sits on, otherwise a rounded corner shows up as a square
+        /// edge.
+        ///
+        /// Setting it also makes the control's BackColor opaque instead of
+        /// transparent. A transparent control is composited by asking the
+        /// PARENT to repaint the control's rectangle; if the parent has not
+        /// painted that rectangle yet, the child shows a torn, half-drawn
+        /// patch - that is exactly the intermittent black block that used to
+        /// appear behind the countdown ring. Because BackFill always equals
+        /// the colour behind the control, painting it opaque is visually
+        /// identical to being transparent (the rounded corners still blend
+        /// in) and it removes the parent-repaint dependency entirely.
         /// </summary>
-        public Color BackFill = Color.Empty;
+        public Color BackFill {
+            get { return _backFill; }
+            set {
+                _backFill = value;
+                if (!value.IsEmpty) BackColor = value;
+            }
+        }
 
         protected SurfaceControl()
         {
@@ -290,7 +308,14 @@ namespace NW
     public class Emblem : SurfaceControl
     {
         public Color Tint = Theme.Cyan;
-        public Emblem() { }
+        public Emblem()
+        {
+            // Opaque rather than transparent: the mark repaints the band's
+            // gradient over its whole rectangle, so there is nothing for the
+            // OS to composite and no reason to ask the band to repaint
+            // behind it.
+            BackColor = Theme.BgDeep;
+        }
 
         protected override void OnPaint(PaintEventArgs e)
         {
