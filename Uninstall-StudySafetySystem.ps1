@@ -12,7 +12,23 @@ if (-not $isAdmin) {
 
 Write-Host "Removing NightWatch Scheduled Tasks..." -ForegroundColor Yellow
 Unregister-ScheduledTask -TaskName "NightWatchSentinel" -Confirm:$false -ErrorAction SilentlyContinue
-Unregister-ScheduledTask -TaskName "IdleMistakeDetector" -Confirm:$false -ErrorAction SilentlyContinue
+
+# Every name this product has used, plus any task still driving a
+# SilentRunner.vbs. Leaving one behind means it keeps firing after the
+# project is moved, popping "Can not find script file" forever.
+foreach ($n in @("IdleMistakeDetector", "SleepSafeSentinel")) {
+    Unregister-ScheduledTask -TaskName $n -Confirm:$false -ErrorAction SilentlyContinue
+}
+try {
+    foreach ($t in (Get-ScheduledTask -ErrorAction SilentlyContinue)) {
+        $hits = @($t.Actions | Where-Object { $_.Arguments -like "*SilentRunner.vbs*" })
+        if ($hits.Count -eq 0) { continue }
+        Write-Host " -> Removing '$($t.TaskName)'" -ForegroundColor DarkGray
+        Unregister-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -Confirm:$false -ErrorAction SilentlyContinue
+    }
+} catch {
+    Write-Warning " -> Legacy task sweep skipped: $_"
+}
 
 # Clean up the legacy break_marker.txt if an older version left one behind.
 # Current versions never create it, so this is a no-op for fresh installs.

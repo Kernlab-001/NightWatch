@@ -112,7 +112,12 @@ try {
 Write-Host "`n[4/4] Registering NightWatch Administrative Sentinel (1-min Win32 precision check)..." -ForegroundColor Yellow
 
 $taskName = "NightWatchSentinel"
-$oldTaskName = "IdleMistakeDetector"
+
+# Task names this product has used before. They must all be removed on
+# install, otherwise an old one keeps firing after the project is renamed or
+# moved to a new folder - and a task pointing at a file that no longer exists
+# does nothing except pop a "Can not find script file" dialog forever.
+$legacyTaskNames = @("IdleMistakeDetector", "SleepSafeSentinel")
 
 $silentRunnerPath = Join-Path $scriptDir "SilentRunner.vbs"
 
@@ -169,12 +174,42 @@ $taskXml = @"
 "@
 
 try {
-    # Remove old buggy task if present
-    Unregister-ScheduledTask -TaskName $oldTaskName -Confirm:$false -ErrorAction SilentlyContinue
+    # Remove old buggy tasks if present
+    foreach ($n in $legacyTaskNames) {
+        Unregister-ScheduledTask -TaskName $n -Confirm:$false -ErrorAction SilentlyContinue
+    }
+
+    # Sweep up any other task that drives a SilentRunner.vbs which is no
+    # longer on disk. These are leftovers from an earlier install at a
+    # different folder, and every time they fire they pop a modal
+    # "Can not find script file" error at the user.
+    try {
+        $allTasks = Get-ScheduledTask -ErrorAction SilentlyContinue
+        foreach ($t in $allTasks) {
+            if ($t.TaskName -eq $taskName) { continue }
+            $args = @($t.Actions | Where-Object { $_.Arguments -like "*SilentRunner.vbs*" } | ForEach-Object { $_.Arguments })
+            if ($args.Count -eq 0) { continue }
+            $runner = $args[0].Trim('"')
+            if (Test-Path $runner) { continue }   # points at a runner that still exists
+            Write-Host " -> Removing stale task '$($t.TaskName)' (runner missing: $runner)" -ForegroundColor DarkGray
+            Unregister-ScheduledTask -TaskName $t.TaskName -TaskPath $t.TaskPath -Confirm:$false -ErrorAction SilentlyContinue
+        }
+    } catch {
+        Write-Warning " -> Stale-task sweep skipped: $_"
+    }
+
     # Remove and register new sentinel task
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
     Register-ScheduledTask -TaskName $taskName -Xml $taskXml -Force | Out-Null
     Write-Host " -> Task '$taskName' registered successfully in Task Scheduler!" -ForegroundColor Green
+
+    # Prove the task points at THIS folder, so a move can never leave it stale.
+    $registered = (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue).Actions.Arguments
+    if ($registered -and $registered -notlike "*$silentRunnerPath*") {
+        Write-Warning " -> Task points at '$registered' instead of '$silentRunnerPath'."
+    } else {
+        Write-Host " -> Verified: task runs '$silentRunnerPath'" -ForegroundColor Green
+    }
 } catch {
     Write-Warning " -> Failed to register scheduled task: $_"
 }

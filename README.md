@@ -153,7 +153,7 @@ The installer will automatically:
    In an *Administrator* PowerShell or cmd: `powercfg /hibernate on`
 2. **Create the Desktop Shortcut**:
    - Right-click Desktop $\rightarrow$ **New** $\rightarrow$ **Shortcut**.
-   - Location: `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%USERPROFILE%\Downloads\Shutdown\StudyBreak.ps1"`
+   - Location: `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "<full path to your NightWatch folder>\StudyBreak.ps1"`
    - (Optional) set *Change Icon* to `assets\icon.ico`.
    - Name the shortcut `Study Break`.
 3. **Register the scheduled task**:
@@ -168,7 +168,7 @@ The installer will automatically:
    - **Actions** tab $\rightarrow$ **New...**:
      - Action: *Start a program*
      - Program/script: `wscript.exe`
-     - Add arguments: `"%USERPROFILE%\Downloads\Shutdown\SilentRunner.vbs"`
+     - Add arguments: `"<full path to the folder you extracted NightWatch into>\SilentRunner.vbs"` (for example `"E:\Shutdown\SilentRunner.vbs"`)
    - **Conditions** tab:
      - **Uncheck** *Start the task only if the computer is on AC power* (ensures protection works on battery).
    - Click **OK**.
