@@ -92,7 +92,9 @@ def generate_svg(text_lines, title, theme="dark", total_width=760, total_height=
     return '\n'.join(svg_parts)
 
 if __name__ == '__main__':
-    base_dir = r'c:\Users\diyaj\Downloads\Shutdown'
+    # Resolve next to this file so the script keeps working after the project
+    # folder is moved or renamed.
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     flf_path = os.path.join(base_dir, 'ansi_shadow.flf')
     chars, height = parse_flf(flf_path)
     
