@@ -57,9 +57,15 @@ Add-Type -AssemblyName System.Drawing | Out-Null
 
 # ==================================================================
 # Custom-drawn control library
+#
+# Add-Type shells out to the C# compiler, so the library was being rebuilt
+# on EVERY launch: ~2s on an idle machine and 10s or more when the CPU is
+# busy (which is exactly when the user is least patient). The compiled
+# assembly is cached under %LOCALAPPDATA%\NightWatch and keyed by a hash
+# of the source, so the first run compiles and every later run just loads
+# a DLL. Editing the library changes the hash and rebuilds it.
 # ==================================================================
-if (-not ('NW.Theme' -as [type])) {
-Add-Type -ReferencedAssemblies System.Drawing, System.Windows.Forms -TypeDefinition @'
+$coreSource = @'
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -164,6 +170,13 @@ namespace NW
     /// <summary>
     /// Base for NW controls that sit on a solid parent surface.
     ///
+    /// Derives from Panel, not Control. A plain Control does NOT lay its
+    /// children out with margins, so a docked child with a Margin was simply
+    /// ignored: the header's inner row and the card's grid ended up flush to
+    /// the edges, the emblem hung off the left of the window and the status
+    /// chip ran into the right frame. Panel honours Margin, which is what
+    /// keeps the header and card content aligned with the body.
+    ///
     /// BackColor = Transparent only works when WinForms can ask the parent to
     /// repaint this control's rectangle. On a live composited window that
     /// repaint is not guaranteed, and when it is skipped the control's own
@@ -177,7 +190,7 @@ namespace NW
     /// So these controls never depend on that machinery at paint time: each
     /// paints its own background from BackFill.
     /// </summary>
-    public abstract class SurfaceControl : Control
+    public abstract class SurfaceControl : Panel
     {
         /// <summary>
         /// Colour painted behind this control; empty means paint nothing.
@@ -243,7 +256,7 @@ namespace NW
     }
 
     /// <summary>Header strip: gradient, one restrained bloom, hairline base.</summary>
-    public class HeaderBand : Control
+    public class HeaderBand : Panel
     {
         public HeaderBand()
         {
@@ -616,7 +629,41 @@ namespace NW
         }
     }
 }
-'@ | Out-Null
+'@
+
+if (-not ('NW.Theme' -as [type])) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hashBytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($coreSource + "|" + [System.Environment]::Version))
+    } finally {
+        $sha.Dispose()
+    }
+    $coreKey = ([System.BitConverter]::ToString($hashBytes) -replace '-', '').Substring(0, 16)
+    $coreDir = Join-Path $env:LOCALAPPDATA "NightWatch"
+    $coreDll = Join-Path $coreDir ("NW.Core.$coreKey.dll")
+
+    $loaded = $false
+    if (Test-Path $coreDll) {
+        try {
+            Add-Type -Path $coreDll
+            $loaded = $true
+        } catch {
+            # A stale or half-written cache entry: fall through and rebuild.
+            $loaded = $false
+        }
+    }
+    if (-not $loaded) {
+        try {
+            if (-not (Test-Path $coreDir)) { New-Item -ItemType Directory -Path $coreDir -Force | Out-Null }
+            Add-Type -ReferencedAssemblies System.Drawing, System.Windows.Forms `
+                -OutputAssembly $coreDll -OutputType Library -TypeDefinition $coreSource
+            Add-Type -Path $coreDll
+        } catch {
+            # Could not write or load the cache (read-only profile, locked
+            # file): compile in memory so the UI still works.
+            Add-Type -ReferencedAssemblies System.Drawing, System.Windows.Forms -TypeDefinition $coreSource
+        }
+    }
 }
 
 [NW.Theme]::DetectReducedMotion()
@@ -773,13 +820,19 @@ function New-Header {
     $band = New-Object NW.HeaderBand
     $band.Dock = "Fill"
     $band.Margin = New-Object System.Windows.Forms.Padding(0)
+    # Padding, not Margin: a docked child of a Panel ignores its own Margin,
+    # so the header row used to run edge to edge - the emblem hung off the
+    # left of the window and the status chip ran into the right frame.
+    # Padding shrinks the band's DisplayRectangle, which is what actually
+    # insets the content.
+    $band.Padding = New-Object System.Windows.Forms.Padding(22, 0, 22, 0)
 
     $inner = New-Grid 3
     $inner.ColumnStyles.Clear()
     [void](Add-Col $inner "Abs" 42)
     [void](Add-Col $inner "Fill")
     [void](Add-Col $inner "Abs" 124)
-    $inner.Margin = New-Object System.Windows.Forms.Padding(22, 0, 22, 0)
+    $inner.Margin = New-Object System.Windows.Forms.Padding(0)
     $r = Add-Row $inner "Fill"
 
     $em = New-Object NW.Emblem
@@ -854,8 +907,7 @@ function New-TimingCard {
         $Tint,
         [string]$RingBig,
         [string]$RingSmall,
-        [double]$RingValue = 1.0,
-        [int]$Height = 128
+        [double]$RingValue = 1.0
     )
 
     $card = New-Object NW.Card
@@ -868,6 +920,10 @@ function New-TimingCard {
     # with whatever is behind the card (Theme.Bg) or the corners go square and
     # black. The timing card always sits on a Theme.Bg panel.
     $card.BackFill = [NW.Theme]::Bg
+    # Same reason as the header band: a docked child ignores its Margin, so
+    # the card's grid needs the inset to come from the card's Padding or the
+    # card content ends up hard against the rounded edge.
+    $card.Padding = New-Object System.Windows.Forms.Padding(18, 14, 18, 14)
 
     $grid = New-Grid 2
     $grid.ColumnStyles.Clear()
@@ -877,7 +933,7 @@ function New-TimingCard {
     # every ancestor's background into it on every invalidate, which is
     # measurably slower (see the paint profiling in the PR).
     $grid.BackColor = [NW.Theme]::Surface
-    $grid.Margin = New-Object System.Windows.Forms.Padding(18, 15, 18, 15)
+    $grid.Margin = New-Object System.Windows.Forms.Padding(0)
     [void](Add-Row $grid "Fill")
 
     $ring = New-Object NW.Ring
@@ -963,7 +1019,7 @@ function Set-Custom {
 # Duration picker
 # ==================================================================
 function New-PickerForm {
-    $form = New-BaseForm -Title "NightWatch - Study Break" -Height 528
+    $form = New-BaseForm -Title "NightWatch - Study Break" -Height 570
     $outer = New-Grid 1
     $outer.BackColor = [NW.Theme]::Bg
     $form.Controls.Add($outer) | Out-Null
@@ -997,7 +1053,7 @@ function New-PickerForm {
     $card = New-TimingCard -Kicker "PROTECTION PAUSED" -TimeText "22:21:24" `
         -RelText "30 minutes from now" -FootText "Re-arms automatically when the break ends" `
         -Tint ([NW.Theme]::Cyan) -RingBig "30" -RingSmall "MINUTES" -RingValue 0.25
-    $r = Add-Row $pad "Abs" 128
+    $r = Add-Row $pad "Abs" 170
     $pad.Controls.Add($card, 0, $r) | Out-Null
 
     # Presets
@@ -1191,7 +1247,7 @@ function New-PickerForm {
 function New-ActiveForm {
     param([DateTime]$ExpiresAt, [int]$TotalMinutes)
 
-    $form = New-BaseForm -Title "NightWatch" -Height 340
+    $form = New-BaseForm -Title "NightWatch" -Height 382
     $outer = New-Grid 1
     $outer.BackColor = [NW.Theme]::Bg
     $form.Controls.Add($outer) | Out-Null
@@ -1220,7 +1276,7 @@ function New-ActiveForm {
     $card = New-TimingCard -Kicker "BREAK ENDS AT" -TimeText $ExpiresAt.ToString("HH:mm:ss") `
         -RelText "of a $total minute break" -FootText "Auto-shutdown stays paused until then" `
         -Tint ([NW.Theme]::Success) -RingBig "0" -RingSmall "MIN LEFT" -RingValue 1.0
-    $r = Add-Row $pad "Abs" 128
+    $r = Add-Row $pad "Abs" 170
     $pad.Controls.Add($card, 0, $r) | Out-Null
 
     [void](Add-Row $pad "Fill")
@@ -1288,7 +1344,7 @@ function New-StatusForm {
         [string]$ButtonText
     )
 
-    $form = New-BaseForm -Title "NightWatch" -Height 316
+    $form = New-BaseForm -Title "NightWatch" -Height 372
     $outer = New-Grid 1
     $outer.BackColor = [NW.Theme]::Bg
     $form.Controls.Add($outer) | Out-Null
@@ -1302,7 +1358,9 @@ function New-StatusForm {
     [void](Add-Row $outer "Fill")
     $outer.Controls.Add($pad, 0, 1) | Out-Null
 
-    $r = Add-Row $pad "Abs" 20
+    # AutoSize row: a fixed row clipped the headline to 6px and the text was
+    # invisible. Let the row take the label's own height.
+    $r = Add-Row $pad "Auto"
     $hl = New-Object System.Windows.Forms.Label
     $hl.Text = $Headline
     $hl.Font = [NW.Theme]::UiSemibold(13.5)
@@ -1313,9 +1371,9 @@ function New-StatusForm {
     $hl.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 14)
     $pad.Controls.Add($hl, 0, $r) | Out-Null
 
-    $r = Add-Row $pad "Abs" 132
+    $r = Add-Row $pad "Abs" 170
     $card = New-TimingCard -Kicker "AUTO-OFF AT" -TimeText $TimeLine -RelText $Detail `
-        -FootText $FootNote -Tint $Tint -RingBig $RingBig -RingSmall "MIN" -RingValue 1.0 -Height 132
+        -FootText $FootNote -Tint $Tint -RingBig $RingBig -RingSmall "MIN" -RingValue 1.0
     $pad.Controls.Add($card, 0, $r) | Out-Null
 
     [void](Add-Row $pad "Fill")
