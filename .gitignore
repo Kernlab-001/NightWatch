@@ -10,3 +10,7 @@ break_marker.txt
 
 # PowerShell history & temporary files
 *.tmp
+
+# Release artefacts
+NightWatch v0.1.zip
+.mavis/

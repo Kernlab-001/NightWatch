@@ -61,23 +61,60 @@ try {
     Write-Warning " -> Failed to set powercfg /hibernate on: $_"
 }
 
-# 2b. Suppress the "dirty boot" beep.
-# When a forced shutdown (like our sentinel's `shutdown /s /f /t 0`) finishes,
-# Windows marks the previous session as dirty in the Boot Configuration Data.
-# On the next boot, wininit.exe detects the flag and plays a single short beep
-# plus the recovery menu. Setting bootstatuspolicy to IgnoreAllFailures tells
-# Windows to skip both, regardless of how the previous session ended.
-Write-Host "`n[2/4] Suppressing the dirty-boot beep..." -ForegroundColor Yellow
+# 2b. Make Windows ignore the previous session's boot status.
+# A forced shutdown can leave the boot status flagged as unsuccessful; on the
+# next boot wininit.exe then plays a short beep and offers the recovery menu.
+# "bootstatuspolicy ignoreallfailures" tells Windows to skip the status
+# check, and "recoveryenabled no" removes the recovery menu itself.
+#
+# Both settings are applied to EVERY "Windows Boot Loader" entry, not just
+# {default}. bcdedit rejects an identifier it does not know ("The specified
+# entry type is invalid"), and the previous version of this script only ever
+# tried {default} and reported the failure as a warning that is easy to miss
+# - so the setting was silently never applied. Every command's real output
+# is now printed, and the result is read back, so a silent failure is not
+# possible any more.
+Write-Host "`n[2/4] Suppressing the boot-status beep..." -ForegroundColor Yellow
+$bcdTargets = @("{current}", "{default}")
 try {
-    $bcdOut = & bcdedit.exe /set "{default}" bootstatuspolicy IgnoreAllFailures 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host " -> Boot beep suppressed. Will not sound after a forced shutdown." -ForegroundColor Green
-    } else {
-        Write-Warning " -> bcdedit returned: $bcdOut"
-    }
+    $enumOut = cmd /c "bcdedit /enum all" 2>&1 | Out-String
+    if ($enumOut -match "Access is denied") { throw "bcdedit needs Administrator rights" }
+    $ids = [regex]::Matches($enumOut, "identifier\s+(?i:\{[0-9a-fA-F\-]+\})") |
+           ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique
+    if ($ids) { $bcdTargets += $ids }
 } catch {
-    Write-Warning " -> Failed to set boot status policy: $_"
+    Write-Warning " -> Could not enumerate boot entries: $_"
 }
+$bcdTargets = @($bcdTargets | Select-Object -Unique)
+
+$bcdApplied = 0
+$bcdProblems = @()
+foreach ($bcdTarget in $bcdTargets) {
+    foreach ($bcdSetting in @(@("bootstatuspolicy", "ignoreallfailures"), @("recoveryenabled", "no"))) {
+        $bcdOut = cmd /c "bcdedit /set $bcdTarget $($bcdSetting[0]) $($bcdSetting[1])" 2>&1 | Out-String
+        $bcdOut = ($bcdOut -replace "`r?`n", " ").Trim()
+        if ($LASTEXITCODE -eq 0) {
+            $bcdApplied++
+        } else {
+            $bcdProblems += "$bcdTarget $($bcdSetting[0]) -> $bcdOut"
+        }
+    }
+}
+
+if ($bcdApplied -gt 0) {
+    Write-Host " -> Applied $bcdApplied boot-status setting(s). No boot beep or recovery menu after a forced shutdown." -ForegroundColor Green
+}
+if ($bcdProblems.Count -gt 0) {
+    foreach ($p in $bcdProblems) { Write-Warning " -> $p" }
+}
+
+# Read the setting back so the user sees the real state, not our own claim.
+try {
+    $verify = cmd /c "bcdedit /enum {current}" 2>&1 | Out-String
+    if ($verify -match "(?i)bootstatuspolicy\s+(\S+)") {
+        Write-Host " -> Verified: bootstatuspolicy = $($Matches[1])" -ForegroundColor Green
+    }
+} catch {}
 
 # 3. Create Desktop Shortcut
 Write-Host "`n[2/4] Creating 'Study Break' Desktop Shortcut with 3D Icon..." -ForegroundColor Yellow
@@ -215,9 +252,20 @@ try {
 }
 
 Write-Host "`n======================================================" -ForegroundColor Cyan
-Write-Host "  NightWatch v2.0 Installed & Fully Active!           " -ForegroundColor Cyan
+Write-Host "  NightWatch v4.0 Installed & Fully Active!           " -ForegroundColor Cyan
 Write-Host "======================================================" -ForegroundColor Cyan
 Write-Host "Upgrades in this version:"
 Write-Host " 1. Precise 30-min physical idle detection (no more 10-min false shutdowns!)."
 Write-Host " 2. Boot-session aware breaks: restarts discard, sleep preserves."
 Write-Host " 3. Loud full-volume alarm + visible flash, falling back to system beep."
+Write-Host " 4. The idle clock now RESETS when you come back. Unlocking the screen and"
+Write-Host "    logging in are invisible to the Win32 idle counter, so the alarm used to"
+Write-Host "    fire seconds after you unlocked and the PC shut down in your face."
+Write-Host " 5. The warning is now actually audible. The alarm holds the system and the"
+Write-Host "    display awake, so the tone is not swallowed by a suspended audio device"
+Write-Host "    in Modern Standby (lid closed / screen timed out)."
+Write-Host " 6. Unlocking the screen during the alarm cancels the shutdown."
+Write-Host ""
+Write-Host "Verify the alarm can be heard:" -ForegroundColor Cyan
+Write-Host "  powershell -NoProfile -ExecutionPolicy Bypass -File `"$idleScriptPath`" -Test"
+Write-Host "  (plays the warning once and prints what the sentinel sees)"
