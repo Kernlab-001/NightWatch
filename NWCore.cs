@@ -67,6 +67,19 @@ namespace NW
         public static void SetBrandImage(Bitmap b) { _brand = b; }
 
         // ---------------------------------------------------------------
+        // The banner art for the header band.
+        //
+        // assets/header-art.png is generated from the README hero banner by
+        // generate_header_art.py: the scene re-graded into the app's own
+        // black-and-orange palette, with both edges faded out so it has no
+        // visible border. The script loads it and hands the bitmap over.
+        // Null means "not supplied" and the band paints exactly as before.
+        // ---------------------------------------------------------------
+        private static Bitmap _headerArt;
+        public static Bitmap HeaderArt { get { return _headerArt; } }
+        public static void SetHeaderArt(Bitmap b) { _headerArt = b; }
+
+        // ---------------------------------------------------------------
         // Cached fonts and string formats.
         //
         // These used to be allocated inside OnPaint, which runs up to 30
@@ -290,6 +303,13 @@ namespace NW
     /// <summary>Header strip: gradient, one restrained bloom, hairline base.</summary>
     public class HeaderBand : Panel
     {
+        /// <summary>
+        /// Space the status chip needs on the right. The band does not lay
+        /// the chip out, so it cannot know how wide it is; NewHeader measures
+        /// the chip and hands the number over.
+        /// </summary>
+        public int RightInset { get; set; }
+
         public HeaderBand()
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
@@ -312,6 +332,39 @@ namespace NW
             }
             using (var b2 = new SolidBrush(Color.FromArgb(5, Theme.Violet)))
                 g.FillEllipse(b2, Width - 90, -30, 140, 140);
+
+            // The banner art: the scene from the README hero banner, re-graded
+            // into this app's palette. It is painted into the band rather
+            // than laid out, so it can live in the gap between the wordmark
+            // and the status chip instead of squeezing the title.
+            //
+            // The strip keeps its own proportions and shrinks with the band,
+            // so the narrow dialogs get a smaller piece of the same art
+            // rather than a squashed one.
+            var art = Theme.HeaderArt;
+            if (art != null && Width > 160 && Height > 20)
+            {
+                // 130px is the wordmark and the room it needs on the left.
+                int avail = Width - RightInset - 130;
+                if (avail > 48)
+                {
+                    // The strip keeps its own proportions and is drawn a
+                    // little shorter than the band, so it sits as a glow
+                    // behind the UI rather than as a panel filling it.
+                    int ah = (int)(Height * 0.78f);
+                    int aw = (int)(ah * (float)art.Width / art.Height);
+                    if (aw > avail) { aw = avail; ah = (int)(aw * (float)art.Height / art.Width); }
+                    int ax = Width - RightInset - aw;
+                    int ay = (Height - ah) / 2;
+                    if (ax > 0)
+                    {
+                        var oldInterp = g.InterpolationMode;
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.DrawImage(art, new Rectangle(ax, ay, aw, ah));
+                        g.InterpolationMode = oldInterp;
+                    }
+                }
+            }
 
             using (var pen = new Pen(Theme.BorderSoft, 1f))
                 g.DrawLine(pen, 0, Height - 1, Width, Height - 1);
@@ -917,6 +970,11 @@ namespace NW
                 chipWidth = TextRenderer.MeasureText(chip, Theme.UiSemibold(8f)).Width + 10;
             }
             AddCol(inner, "Abs", chipWidth);
+            // The banner art is painted into the band, not laid out, so the
+            // band has to be told how much room the chip takes: the art
+            // belongs in the gap between the wordmark and the chip, and the
+            // chip has to stay on clean black.
+            band.RightInset = chipWidth + 14;
             inner.Margin = new Padding(0);
             int r = AddRow(inner, "Fill", 0);
 

@@ -31,6 +31,34 @@
   <a href="#-uninstallation">Uninstallation</a>
 </p>
 
+<p align="center">
+  <img src="assets/banner-hero.png" alt="NightWatch keeping watch over a late-night study desk" width="100%" />
+</p>
+
+---
+
+## 📦 v0.2 — what is in this release
+
+The second tagged release. The banner that was only in the README is now in the app.
+
+**The header band carries the banner art.**
+
+Every dialog's header now shows a piece of the README hero banner — the mug, the rising steam and the open book — re-graded into the app's own black-and-orange palette, so the teal in the artwork never reaches the UI. Both edges fade out, so the strip dissolves into the band instead of ending on a rectangle, and the status chip always stays on clean black.
+
+The strip keeps its proportions and shrinks with the window, so the narrower dialogs get a smaller piece of the same art rather than a squashed one.
+
+**The artwork is generated, not painted by hand.**
+
+| File | What it is |
+| :--- | :--- |
+| `assets/banner-hero.png` | The 16:9 hero banner, built from the NightWatch artwork |
+| `assets/header-art.png` | The banner's scene, re-graded for the header band |
+| `generate_header_art.py` | Builds the second from the first |
+
+**Nothing depends on it.**
+
+If `assets/header-art.png` is missing, the header paints exactly as it did in v0.1 — the band has no knowledge of the file beyond its absence.
+
 ---
 
 ## 📦 v0.1 — what is in this release
@@ -113,6 +141,7 @@ graph TD
 - **🔄 The Clock Resets When You Come Back**: Unlocking the screen and logging in are *secure-desktop* input, and `GetLastInputInfo` cannot see it — so the counter kept running while you were actually back at the machine, and the PC could shut down seconds after you unlocked it. NightWatch now tracks the idle time itself and restarts the clock the moment it can prove you are back.
 - **🔊 30-Second Warning Beep Countdown**: Plays audible warning beeps before shutting down. Moving the mouse, tapping any key, or unlocking the screen during the beeps instantly aborts the shutdown. The alarm holds the system and the display awake while it runs, so the tone is never swallowed by a suspended audio device (lid closed / screen timed out).
 - **🎨 The Real NightWatch Icon**: The header shows the actual artwork from `assets/icon.png`, the same picture the Desktop shortcut uses, and the window carries the real icon in its title bar. The finished tile is cached next to the compiled library, so it costs a couple of milliseconds per launch instead of decoding an 818×818 PNG every time.
+- **🖼️ The Banner Art in the Header**: Every dialog's header band carries a piece of the README hero banner — the mug, the rising steam and the open book — re-graded into the app's own black-and-orange palette by `generate_header_art.py`, with both edges faded out so the strip has no visible border. The status chip always stays on clean black. If `assets/header-art.png` is missing the band paints exactly as it did before, so the UI never depends on it.
 - **⏱️ Timed Breaks That End Themselves**: Press **`Ctrl + Alt + B`** (or double-click the icon) and a dialog asks how long your break lasts — pick **15 / 30 / 40 / 60 min** or type any custom value. Auto-shutdown stays paused for exactly that long, then arms itself again. You never have to click again to turn it off.
 - **🔁 Boot-Session Aware Breaks**: Every break is stamped with the current OS boot session. **Restarting or shutting down the PC cancels the break** (a break can't survive a reboot you didn't plan), while **sleep and hibernate preserve it**, since those keep the same boot session.
 - **🛡️ Accidental Sleep Defense**: If you truly fall asleep with no break active, NightWatch executes a clean forced shutdown (`shutdown /s /f /t 0`) to protect your battery and SSD.
@@ -131,8 +160,11 @@ NightWatch/
 │   ├── wordmark-dark.svg       # 3D ANSI shadow typography wordmark (dark mode)
 │   ├── wordmark-light.svg      # 3D ANSI shadow typography wordmark (light mode)
 │   ├── icon.ico                # Multi-resolution desktop shortcut icon
-│   └── icon.png                # The artwork behind the icon
+│   ├── icon.png                # The artwork behind the icon
+│   ├── banner-hero.png         # The README hero banner (16:9)
+│   └── header-art.png          # The banner, re-graded for the header band
 ├── NWCore.cs                  # The UI library: custom controls + the three dialogs
+├── generate_header_art.py     # Builds header-art.png from banner-hero.png
 ├── StudyBreak.ps1              # Launcher: loads NWCore.cs, handles the break state
 ├── StudyBreak.bat              # Standalone batch launcher
 ├── IdleMistakeDetector.ps1     # 30-minute idle watcher & safety shutdown engine
