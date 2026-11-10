@@ -202,6 +202,19 @@ try {
     if ($brand) { [NW.Theme]::SetBrandImage($brand) }
 } catch {}
 
+# The header art: the README hero banner re-graded into the app's palette,
+# drawn into the header band of every dialog. Unlike the brand tile this one
+# needs no cache - it is a 210x70 strip, so decoding it costs about the same
+# as reading it off disk, and a stale cached copy would be a bug rather than
+# a speed-up.
+try {
+    $artPath = Join-Path $script:AssetsDir "header-art.png"
+    if (Test-Path $artPath) {
+        $art = New-Object System.Drawing.Bitmap($artPath)
+        [NW.Theme]::SetHeaderArt($art)
+    }
+} catch {}
+
 try {
     if ($script:AppIcon) { [NW.UI]::SetIcon($script:AppIcon) }
 } catch {}

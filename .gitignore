@@ -12,5 +12,5 @@ break_marker.txt
 *.tmp
 
 # Release artefacts
-NightWatch v0.1.zip
+NightWatch v*.zip
 .mavis/
