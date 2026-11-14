@@ -18,6 +18,7 @@
 // ==================================================================
 
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -155,7 +156,7 @@ namespace NW
             if (strength <= 0) return;
             for (int i = 0; i < 3; i++)
             {
-                int a = Math.Max(1, (int)(strength * (0.16 / (i + 1))));
+                int a = Math.Max(1, Math.Min(255, (int)(strength * (0.16 / (i + 1)))));
                 float w = radius + (float)(i + 1) * 2.2f;
                 using (var pen = new Pen(Color.FromArgb(a, c), w) {
                     StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
@@ -284,6 +285,7 @@ namespace NW
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            if (Width <= 1 || Height <= 1) return;
             var g = e.Graphics; Theme.Setup(g);
             PaintBack(g);
             var r = new Rectangle(0, 0, Width - 1, Height - 1);
@@ -319,6 +321,7 @@ namespace NW
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            if (Width <= 1 || Height <= 1) return;
             var g = e.Graphics; Theme.Setup(g);
             var r = new Rectangle(0, 0, Width, Height);
             using (var lg = new LinearGradientBrush(r, Theme.BgDeep, Theme.Bg, LinearGradientMode.Vertical))
@@ -332,39 +335,6 @@ namespace NW
             }
             using (var b2 = new SolidBrush(Color.FromArgb(5, Theme.Violet)))
                 g.FillEllipse(b2, Width - 90, -30, 140, 140);
-
-            // The banner art: the scene from the README hero banner, re-graded
-            // into this app's palette. It is painted into the band rather
-            // than laid out, so it can live in the gap between the wordmark
-            // and the status chip instead of squeezing the title.
-            //
-            // The strip keeps its own proportions and shrinks with the band,
-            // so the narrow dialogs get a smaller piece of the same art
-            // rather than a squashed one.
-            var art = Theme.HeaderArt;
-            if (art != null && Width > 160 && Height > 20)
-            {
-                // 130px is the wordmark and the room it needs on the left.
-                int avail = Width - RightInset - 130;
-                if (avail > 48)
-                {
-                    // The strip keeps its own proportions and is drawn a
-                    // little shorter than the band, so it sits as a glow
-                    // behind the UI rather than as a panel filling it.
-                    int ah = (int)(Height * 0.78f);
-                    int aw = (int)(ah * (float)art.Width / art.Height);
-                    if (aw > avail) { aw = avail; ah = (int)(aw * (float)art.Height / art.Width); }
-                    int ax = Width - RightInset - aw;
-                    int ay = (Height - ah) / 2;
-                    if (ax > 0)
-                    {
-                        var oldInterp = g.InterpolationMode;
-                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                        g.DrawImage(art, new Rectangle(ax, ay, aw, ah));
-                        g.InterpolationMode = oldInterp;
-                    }
-                }
-            }
 
             using (var pen = new Pen(Theme.BorderSoft, 1f))
                 g.DrawLine(pen, 0, Height - 1, Width, Height - 1);
@@ -387,6 +357,7 @@ namespace NW
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            if (Width < 4 || Height < 4) return;
             var g = e.Graphics; Theme.Setup(g);
             // The mark sits on HeaderBand's vertical BgDeep->Bg gradient and
             // spans the band's full height, so it repaints that same gradient
@@ -398,16 +369,13 @@ namespace NW
                 g.FillRectangle(band, new Rectangle(0, 0, Width, Height));
 
             float s = Math.Min(Width, Height);
-            if (s < 4) return;
 
-            // The real NightWatch icon, when the script has supplied it.
-            // It is drawn straight onto the band gradient painted above, so
-            // the rounded corners of the artwork melt into the header
-            // instead of showing up as a pasted-on rectangle.
             var brand = Theme.Brand;
             if (brand != null)
             {
-                var bBox = new RectangleF((Width - s) / 2f, (Height - s) / 2f, s, s);
+                float padB = s * 0.10f;
+                float dsB = s - padB * 2f;
+                var bBox = new RectangleF((Width - dsB) / 2f, (Height - dsB) / 2f, dsB, dsB);
                 var oldInterp = g.InterpolationMode;
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.DrawImage(brand, bBox);
@@ -415,25 +383,29 @@ namespace NW
                 return;
             }
 
-            var box = new RectangleF((Width - s) / 2f, (Height - s) / 2f, s, s);
+            float pad = s * 0.16f;
+            float ds = s - pad * 2f;
+            var box = new RectangleF((Width - ds) / 2f, (Height - ds) / 2f, ds, ds);
 
             // Crescent = circle minus an offset circle (alternate fill).
-            var moon = new GraphicsPath();
-            moon.AddEllipse(box);
-            var cut = new GraphicsPath();
-            float k = s * 0.26f;
-            cut.AddEllipse(box.X + k, box.Y - k * 0.62f, s, s);
-            moon.FillMode = FillMode.Alternate;
-            moon.AddPath(cut, true);
+            using (var moon = new GraphicsPath())
+            using (var cut = new GraphicsPath())
+            {
+                moon.AddEllipse(box);
+                float k = ds * 0.28f;
+                cut.AddEllipse(box.X + k, box.Y - k * 0.60f, ds, ds);
+                moon.FillMode = FillMode.Alternate;
+                moon.AddPath(cut, true);
 
-            using (var lg = new LinearGradientBrush(box, Theme.Cyan, Theme.Violet, LinearGradientMode.Vertical))
-                g.FillPath(lg, moon);
+                using (var lg = new LinearGradientBrush(box, Theme.Cyan, Theme.Blue, LinearGradientMode.Vertical))
+                    g.FillPath(lg, moon);
+            }
 
-            float bw = Math.Max(1.5f, s * 0.10f);
-            float bh = s * 0.44f;
-            float gap = s * 0.14f;
-            float by = box.Y + (s - bh) / 2f;
-            float bx = box.X + (s - (bw * 2 + gap)) / 2f;
+            float bw = Math.Max(2f, ds * 0.11f);
+            float bh = ds * 0.42f;
+            float gap = ds * 0.14f;
+            float by = box.Y + (ds - bh) / 2f;
+            float bx = box.X + (ds - (bw * 2 + gap)) / 2f;
             using (var b = new SolidBrush(Color.FromArgb(255, 244, 232)))
             {
                 g.FillRectangle(b, bx, by, bw, bh);
@@ -502,6 +474,7 @@ namespace NW
             // biggest lever on how busy the UI feels.
             _anim.Interval = Theme.Animations ? 33 : 120;
             _anim.Tick += delegate {
+                if (IsDisposed) { _anim.Stop(); return; }
                 float dh = (_hovering ? 1f : 0f) - _hover;
                 float dp = (_pressing ? 1f : 0f) - _press;
                 float df = (Focused ? 1f : 0f) - _focus;
@@ -510,6 +483,20 @@ namespace NW
                 _hover += dh * k; _press += dp * k; _focus += df * k;
                 Invalidate();
             };
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_anim != null)
+                {
+                    _anim.Stop();
+                    _anim.Dispose();
+                    _anim = null;
+                }
+            }
+            base.Dispose(disposing);
         }
 
         private void Kick()
@@ -555,6 +542,7 @@ namespace NW
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            if (Width <= 1 || Height <= 1) return;
             var g = e.Graphics; Theme.Setup(g);
             PaintBack(g);
             var r = new Rectangle(0, 0, Width - 1, Height - 1);
@@ -572,7 +560,7 @@ namespace NW
             else if (Variant == BtnVariant.Danger)
             {
                 fill = Blend(Color.FromArgb(52, 22, 16), Theme.Danger, (int)(_hover * 60));
-                edge = Theme.Danger; txt = Theme.Danger; emphasis = true;
+                edge = Theme.Danger; txt = Color.White; emphasis = true;
             }
             else if (Selected)
             {
@@ -611,9 +599,13 @@ namespace NW
             if (_focus > 0f)
             {
                 var fr = new Rectangle(2, 2, Math.Max(1, r.Width - 4), Math.Max(1, r.Height - 4));
-                using (var p2 = Theme.Rounded(fr, Math.Max(2, Radius - 2)))
-                using (var pen = new Pen(Color.FromArgb((int)(210 * _focus), Theme.Cyan), 1.6f))
-                    g.DrawPath(pen, p2);
+                int focusAlpha = Math.Max(0, Math.Min(255, (int)(210 * _focus)));
+                if (focusAlpha > 0)
+                {
+                    using (var p2 = Theme.Rounded(fr, Math.Max(2, Radius - 2)))
+                    using (var pen = new Pen(Color.FromArgb(focusAlpha, Theme.Cyan), 1.6f))
+                        g.DrawPath(pen, p2);
+                }
             }
 
             if (SymbolOnly) { DrawSymbol(g, r, txt); return; }
@@ -648,7 +640,7 @@ namespace NW
             if (amount <= 0) return a;
             if (amount >= 255) return b;
             return Color.FromArgb(
-                a.A + (b.R - a.A) * amount / 255,
+                a.A + (b.A - a.A) * amount / 255,
                 a.R + (b.R - a.R) * amount / 255,
                 a.G + (b.G - a.G) * amount / 255,
                 a.B + (b.B - a.B) * amount / 255);
@@ -681,11 +673,26 @@ namespace NW
             _anim = new Timer();
             _anim.Interval = Theme.Animations ? 33 : 100;
             _anim.Tick += delegate {
+                if (IsDisposed) { _anim.Stop(); return; }
                 double d = _value - _shown;
                 if (Math.Abs(d) < 0.002) { _anim.Stop(); return; }
                 _shown += d * (Theme.Animations ? 0.25 : 1.0);
                 Invalidate();
             };
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_anim != null)
+                {
+                    _anim.Stop();
+                    _anim.Dispose();
+                    _anim = null;
+                }
+            }
+            base.Dispose(disposing);
         }
 
         private void Kick()
@@ -696,6 +703,7 @@ namespace NW
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            if (Width <= 1 || Height <= 1) return;
             var g = e.Graphics; Theme.Setup(g);
             PaintBack(g);
             float pad = Thickness + 3f;
@@ -710,7 +718,7 @@ namespace NW
             double frac = _shown;
             if (frac > 0.0001)
             {
-                float sweep = (float)(360.0 * frac);
+                float sweep = (float)(360.0 * Math.Min(1.0, Math.Max(0.0, frac)));
                 using (var glow = new Pen(Color.FromArgb(38, Accent), Thickness + 7f) {
                     StartCap = LineCap.Round, EndCap = LineCap.Round })
                     g.DrawArc(glow, box, -90f, sweep);
@@ -771,6 +779,7 @@ namespace NW
         public Card Card { get; set; }
         public TextBox NumBox { get; set; }
         public Label ErrLabel { get; set; }
+        public Label ResumeLabel { get; set; }
         public NWButton StartButton { get; set; }
         public List<NWButton> Presets { get; private set; }
         public Timer Clock { get; set; }
@@ -784,6 +793,7 @@ namespace NW
     public class ActiveForm : Form
     {
         public Card Card { get; set; }
+        public Label SubtitleLabel { get; set; }
         public Timer Clock { get; set; }
         public NWButton KeepButton { get; set; }
         public bool EndNow { get; set; }
@@ -875,13 +885,12 @@ namespace NW
             return grid.ColumnStyles.Count - 1;
         }
 
-        /// <summary>Vertical text stack: AutoSize rows only, with a
-        /// percent-100 spacer top and bottom so the block sits centred.</summary>
+        /// <summary>Vertical text stack: AutoSize rows for labels with a
+        /// bottom spacer so text stays top-aligned and never clips.</summary>
         static TableLayoutPanel NewVStack(TableLayoutPanel parent, int col)
         {
             TableLayoutPanel t = NewGrid(1);
             parent.Controls.Add(t, col, 0);
-            AddRow(t, "Fill", 0);
             return t;
         }
 
@@ -1093,8 +1102,9 @@ namespace NW
             int wrapW = FORM_W - 44 - 106 - 16 - 36 - 8;
             AddText(txt, kicker, 8f, Theme.TextDim, true, 5, wrapW);
             Label timeLabel = AddAccent(txt, timeText, 15f, tint, 3, wrapW);
-            AddText(txt, relText, 9f, Theme.TextMuted, false, 0, wrapW);
-            AddText(txt, footText, 8.5f, Theme.TextDim, false, 0, wrapW);            AddRow(txt, "Fill", 0);
+            AddText(txt, relText, 9f, Theme.TextMuted, false, 4, wrapW);
+            AddText(txt, footText, 8.5f, Theme.TextDim, false, 0, wrapW);
+            AddRow(txt, "Fill", 0);
 
             grid.Controls.Add(ring, 0, 0);
             card.Controls.Add(grid);
@@ -1116,12 +1126,22 @@ namespace NW
         {
             DateTime end = f.BaseTime.AddMinutes(minutes);
             Color tint = custom ? Theme.Blue : Theme.Cyan;
-            f.Card.Ring.CenterBig = minutes.ToString();
-            f.Card.Ring.Value = Math.Max(0.06, Math.Min(1.0, (double)(minutes / 120.0)));
-            f.Card.Ring.Accent = tint;
-            f.Card.GlowColor = tint;
-            f.Card.TimeLabel.Text = end.ToString("HH:mm:ss");
-            f.Card.TimeLabel.ForeColor = tint;
+            if (f.ResumeLabel != null) {
+                f.ResumeLabel.Text = "Resumes automatically at " + end.ToString("HH:mm") + " (" + minutes + "m from now)";
+                f.ResumeLabel.ForeColor = tint;
+            }
+            if (f.Card != null) {
+                if (f.Card.Ring != null) {
+                    f.Card.Ring.CenterBig = minutes.ToString();
+                    f.Card.Ring.Value = Math.Max(0.06, Math.Min(1.0, (double)(minutes / 120.0)));
+                    f.Card.Ring.Accent = tint;
+                    f.Card.GlowColor = tint;
+                }
+                if (f.Card.TimeLabel != null && f.Card.TimeLabel != f.ResumeLabel) {
+                    f.Card.TimeLabel.Text = end.ToString("HH:mm:ss");
+                    f.Card.TimeLabel.ForeColor = tint;
+                }
+            }
         }
 
         static void SyncAction(PickerForm f, int minutes)
@@ -1147,7 +1167,7 @@ namespace NW
         public static PickerForm NewPickerForm()
         {
             PickerForm form = new PickerForm();
-            ConfigureBase(form, "NightWatch - Study Break", 400);
+            ConfigureBase(form, "NightWatch - Study Break", 380);
 
             TableLayoutPanel outer = NewGrid(1);
             outer.BackColor = Theme.Bg;
@@ -1158,45 +1178,39 @@ namespace NW
 
             TableLayoutPanel pad = NewGrid(1);
             pad.BackColor = Theme.Bg;
-            pad.Padding = new Padding(22, 18, 22, 16);
+            pad.Padding = new Padding(26, 18, 26, 22);
             AddRow(outer, "Fill", 0);
             outer.Controls.Add(pad, 0, 1);
 
-            // Title
+            // Title & Subtitle
             int r = AddRow(pad, "Auto", 0);
             Label title = new Label();
-            title.Text = "How long is your break?";
-            title.Font = (Font)Theme.UiSemibold(13.5f).Clone();
+            title.Text = "Take a study break";
+            title.Font = (Font)Theme.UiSemibold(14f).Clone();
             title.ForeColor = Theme.Text;
             title.BackColor = Color.Transparent;
             title.AutoSize = true;
             title.Dock = DockStyle.Fill;
-            title.Margin = new Padding(0, 0, 0, 5);
+            title.Margin = new Padding(0, 0, 0, 3);
             pad.Controls.Add(title, 0, r);
 
             r = AddRow(pad, "Auto", 0);
-            pad.Controls.Add(NewLabel("Auto-shutdown pauses for exactly this long, then resumes.",
-                                       8.75f, Theme.TextDim, false, 0, 0), 0, r);
-            AddRow(pad, "Abs", 16);
+            pad.Controls.Add(NewLabel("Auto-shutdown pauses while you step away, then resumes.",
+                                       8.75f, Theme.TextDim, false, 14, 0), 0, r);
 
-            // Timing card
-            Card card = NewTimingCard("PROTECTION PAUSED", "22:21:24", "30 minutes from now",
-                "Auto-shutdown comes back when the break ends", Theme.Cyan, "30", "MINUTES", 0.25);
-            r = AddRow(pad, "Abs", 170);
-            pad.Controls.Add(card, 0, r);
+            // Preset Pills: 15m, 30m, 45m, 60m
+            r = AddRow(pad, "Auto", 0);
+            pad.Controls.Add(NewLabel("CHOOSE DURATION", 8f, Theme.TextMuted, true, 6, 0), 0, r);
 
-            // Presets
-            AddRow(pad, "Abs", 16);
-            int[] presets = { 15, 30, 40, 60 };
+            int[] presets = { 15, 30, 45, 60 };
             TableLayoutPanel presetRow = NewGrid(presets.Length);
             presetRow.RowStyles.Clear();
             AddRow(presetRow, "Fill", 0);
-            r = AddRow(pad, "Abs", 44);
+            r = AddRow(pad, "Abs", 42);
             pad.Controls.Add(presetRow, 0, r);
 
             foreach (int val in presets) {
-                NWButton b = NewNWButton(val + " min", BtnVariant.Ghost, null, 0, false, 0,
-                                         val == 15 ? 0 : 8);
+                NWButton b = NewNWButton(val + "m", BtnVariant.Ghost, null, 0, false, 4, 4);
                 b.Tag = val;
                 b.Selected = (val == 30);
                 b.AccessibleName = "Take a " + val + " minute study break";
@@ -1214,25 +1228,18 @@ namespace NW
             }
 
             // Custom duration
-            // Its own AutoSize row with a margin under it. It used to sit in a
-            // fixed 22px row, which left it flush against the field below with
-            // no breathing room, and the row was so short the text looked
-            // cut off.
+            AddRow(pad, "Abs", 10);
             r = AddRow(pad, "Auto", 0);
-            pad.Controls.Add(NewLabel("OR SET A CUSTOM DURATION", 8f, Theme.TextMuted, true, 6, 0), 0, r);
+            pad.Controls.Add(NewLabel("OR CUSTOM MINUTES", 8f, Theme.TextMuted, true, 6, 0), 0, r);
 
             r = AddRow(pad, "Abs", 40);
-            // The minus button, the number field and the plus button are one
-            // group with fixed spacing, centred in the row. Docked to the
-            // edges of the window they read as three unrelated controls.
-            TableLayoutPanel customRow = NewGrid(3);
-            customRow.Anchor = AnchorStyles.None;
-            customRow.Width = 286;
-            customRow.Height = 40;
+            TableLayoutPanel customRow = NewGrid(5);
             customRow.ColumnStyles.Clear();
+            AddCol(customRow, "Fill", 0);
             AddCol(customRow, "Abs", 40);
             AddCol(customRow, "Abs", 190);
             AddCol(customRow, "Abs", 40);
+            AddCol(customRow, "Fill", 0);
             customRow.Margin = new Padding(0);
             AddRow(customRow, "Fill", 0);
             pad.Controls.Add(customRow, 0, r);
@@ -1244,7 +1251,9 @@ namespace NW
             Card field = new Card();
             field.Dock = DockStyle.Fill;
             field.Radius = 10;
-            field.Margin = new Padding(0, 0, 8, 0);
+            field.Margin = new Padding(0);
+            field.Padding = new Padding(8, 9, 8, 0);
+            field.BackFill = Theme.Bg;
 
             TextBox num = new TextBox();
             num.Dock = DockStyle.Fill;
@@ -1252,11 +1261,10 @@ namespace NW
             num.TextAlign = HorizontalAlignment.Center;
             num.Font = (Font)Theme.Num(11.5f, FontStyle.Regular).Clone();
             num.ForeColor = Theme.Text;
-            // TextBox cannot be transparent; match the card fill behind it.
             num.BackColor = Theme.Surface;
             num.BorderStyle = BorderStyle.None;
             num.MaxLength = 6;
-            num.Margin = new Padding(4, 0, 4, 0);
+            num.Margin = new Padding(0);
             num.AccessibleName = "Custom break duration in minutes, from 1 to 1440";
             field.Controls.Add(num);
 
@@ -1264,13 +1272,43 @@ namespace NW
             btnPlus.AccessibleName = "Increase duration by one minute";
             btnPlus.Click += delegate { SetCustom(form, 1); };
 
-            customRow.Controls.Add(btnMinus, 0, 0);
-            customRow.Controls.Add(field, 1, 0);
-            customRow.Controls.Add(btnPlus, 2, 0);
+            customRow.Controls.Add(btnMinus, 1, 0);
+            customRow.Controls.Add(field, 2, 0);
+            customRow.Controls.Add(btnPlus, 3, 0);
 
-            r = AddRow(pad, "Abs", 22);
+            r = AddRow(pad, "Abs", 20);
             Label errLabel = NewLabel("", 8.5f, Theme.Danger, false, 0, 0);
             pad.Controls.Add(errLabel, 0, r);
+
+            // Sleek inline resume badge
+            Card resumeCard = new Card();
+            resumeCard.Dock = DockStyle.Fill;
+            resumeCard.Radius = 10;
+            resumeCard.Fill = Theme.Surface;
+            resumeCard.BorderColor = Theme.BorderSoft;
+            resumeCard.BackFill = Theme.Bg;
+            resumeCard.Margin = new Padding(0);
+            resumeCard.Padding = new Padding(12, 8, 12, 8);
+            resumeCard.Ring = new Ring();
+
+            Label resumeLabel = new Label();
+            resumeLabel.Text = "Resumes automatically at 30m from now";
+            resumeLabel.Font = (Font)Theme.UiSemibold(9.25f).Clone();
+            resumeLabel.ForeColor = Theme.Cyan;
+            resumeLabel.BackColor = Color.Transparent;
+            resumeLabel.TextAlign = ContentAlignment.MiddleCenter;
+            resumeLabel.Dock = DockStyle.Fill;
+            resumeCard.Controls.Add(resumeLabel);
+
+            Label dummyTime = new Label();
+            dummyTime.Visible = false;
+            dummyTime.Dock = DockStyle.None;
+            dummyTime.Bounds = new Rectangle(0, 0, 0, 0);
+            resumeCard.Controls.Add(dummyTime);
+            resumeCard.TimeLabel = dummyTime;
+
+            r = AddRow(pad, "Abs", 38);
+            pad.Controls.Add(resumeCard, 0, r);
 
             // Footer
             AddRow(pad, "Fill", 0);
@@ -1290,8 +1328,9 @@ namespace NW
             actionRow.Controls.Add(btnCancel, 0, 0);
             actionRow.Controls.Add(btnStart, 1, 0);
 
-            // --- selection wiring ---
-            form.Card = card;
+            // Wiring
+            form.Card = resumeCard;
+            form.ResumeLabel = resumeLabel;
             form.NumBox = num;
             form.ErrLabel = errLabel;
             form.StartButton = btnStart;
@@ -1299,7 +1338,6 @@ namespace NW
             form.UsingCustom = false;
             form.BaseTime = DateTime.Now;
 
-            // Live validation: never silently accept an out-of-range value.
             num.TextChanged += delegate {
                 int v;
                 bool ok = int.TryParse(form.NumBox.Text, out v) && v >= 1 && v <= 1440;
@@ -1318,7 +1356,6 @@ namespace NW
             };
 
             btnCancel.Click += delegate { form.ChosenMinutes = 0; form.Close(); };
-
             btnStart.Click += delegate {
                 int v;
                 if (!int.TryParse(form.NumBox.Text, out v) || v < 1 || v > 1440) {
@@ -1330,9 +1367,6 @@ namespace NW
                 form.Close();
             };
 
-            // Keep the on-screen end time honest against the wall clock.
-            // Timing only - never touch the action state or the ring value
-            // here, or this timer would restart the ring animation every second.
             Timer clock = new Timer();
             clock.Interval = 1000;
             clock.Tick += delegate {
@@ -1343,6 +1377,12 @@ namespace NW
 
             form.AcceptButton = btnStart;
             form.CancelButton = btnCancel;
+            form.FormClosed += delegate {
+                if (form.Clock != null) {
+                    try { form.Clock.Stop(); form.Clock.Dispose(); } catch { }
+                    form.Clock = null;
+                }
+            };
 
             SyncTiming(form, 30, false);
             SyncAction(form, 30);
@@ -1367,40 +1407,108 @@ namespace NW
 
             TableLayoutPanel pad = NewGrid(1);
             pad.BackColor = Theme.Bg;
-            pad.Padding = new Padding(22, 18, 22, 18);
+            pad.Padding = new Padding(26, 18, 26, 22);
             AddRow(outer, "Fill", 0);
             outer.Controls.Add(pad, 0, 1);
 
-            int r = AddRow(pad, "Auto", 0);
-            Label h = new Label();
-            h.Text = "You're on a break";
-            h.Font = (Font)Theme.UiSemibold(13.5f).Clone();
-            h.ForeColor = Theme.Text;
-            h.BackColor = Color.Transparent;
-            h.AutoSize = true;
-            h.Dock = DockStyle.Fill;
-            h.Margin = new Padding(0, 0, 0, 14);
-            pad.Controls.Add(h, 0, r);
-
             int total = Math.Max(1, totalMinutes);
-            Card card = NewTimingCard("BREAK ENDS AT", expiresAt.ToString("HH:mm:ss"),
-                "of a " + total + "-minute break", "Auto-shutdown stays paused until the break ends.",
-                Theme.Success, "0", "MIN LEFT", 1.0);
-            r = AddRow(pad, "Abs", 170);
+
+            // Title
+            int r = AddRow(pad, "Auto", 0);
+            Label title = new Label();
+            title.Text = "You're on a break";
+            title.Font = (Font)Theme.UiSemibold(14f).Clone();
+            title.ForeColor = Theme.Text;
+            title.BackColor = Color.Transparent;
+            title.AutoSize = true;
+            title.Dock = DockStyle.Fill;
+            title.Margin = new Padding(0, 0, 0, 3);
+            pad.Controls.Add(title, 0, r);
+
+            // Subtitle
+            r = AddRow(pad, "Auto", 0);
+            Label subtitle = new Label();
+            subtitle.Text = "Break ends at " + expiresAt.ToString("HH:mm:ss") + " (" + total + " min total)";
+            subtitle.Font = (Font)Theme.Ui(8.75f, FontStyle.Regular).Clone();
+            subtitle.ForeColor = Theme.TextDim;
+            subtitle.BackColor = Color.Transparent;
+            subtitle.AutoSize = true;
+            subtitle.Dock = DockStyle.Fill;
+            subtitle.Margin = new Padding(0, 0, 0, 16);
+            pad.Controls.Add(subtitle, 0, r);
+
+            // Centered circular progress ring inside a sleek card
+            r = AddRow(pad, "Abs", 156);
+            Card card = new Card();
+            card.Dock = DockStyle.Fill;
+            card.Radius = 14;
+            card.Fill = Theme.Surface;
+            card.BorderColor = Theme.BorderSoft;
+            card.BackFill = Theme.Bg;
+            card.GlowStrength = 10;
+            card.GlowColor = Theme.Success;
+            card.Margin = new Padding(0);
+            card.Padding = new Padding(12);
+
+            TableLayoutPanel ringGrid = NewGrid(3);
+            ringGrid.ColumnStyles.Clear();
+            AddCol(ringGrid, "Fill", 0);
+            AddCol(ringGrid, "Abs", 132);
+            AddCol(ringGrid, "Fill", 0);
+            ringGrid.RowStyles.Clear();
+            AddRow(ringGrid, "Fill", 0);
+            ringGrid.BackColor = Theme.Surface;
+            ringGrid.Margin = new Padding(0);
+
+            Ring ring = new Ring();
+            ring.Dock = DockStyle.Fill;
+            ring.Thickness = 8f;
+            ring.Accent = Theme.Success;
+            ring.Track = Theme.BorderSoft;
+            ring.BackFill = card.Fill;
+            ring.CenterBig = total.ToString();
+            ring.CenterSmall = "MIN LEFT";
+            ring.Value = 1.0;
+            ring.AccessibleName = "Break countdown timer";
+            ringGrid.Controls.Add(ring, 1, 0);
+
+            Label timeLabel = new Label();
+            timeLabel.Text = expiresAt.ToString("HH:mm:ss");
+            timeLabel.Visible = false;
+            timeLabel.Dock = DockStyle.None;
+            timeLabel.Bounds = new Rectangle(0, 0, 0, 0);
+            card.Controls.Add(timeLabel);
+            card.Controls.Add(ringGrid);
+
+            card.Ring = ring;
+            card.TimeLabel = timeLabel;
             pad.Controls.Add(card, 0, r);
 
-            AddRow(pad, "Fill", 0);
+            // Spacer
+            AddRow(pad, "Abs", 16);
+
+            // Action row: Keep break & End break now
             r = AddRow(pad, "Abs", BTN_H);
             TableLayoutPanel split = NewGrid(2);
+            split.ColumnStyles.Clear();
+            AddCol(split, "Percent", 50f);
+            AddCol(split, "Percent", 50f);
+            split.RowStyles.Clear();
             AddRow(split, "Fill", 0);
+            split.Margin = new Padding(0);
             pad.Controls.Add(split, 0, r);
 
-            NWButton btnKeep = NewNWButton("Keep break", BtnVariant.Ghost, null, 0, false, 8, 0);
-            NWButton btnEnd = NewNWButton("End break now", BtnVariant.Danger, Theme.Danger, 0, false, 0, 8);
+            NWButton btnKeep = NewNWButton("Keep break", BtnVariant.Ghost, null, 0, false, 0, 6);
+            NWButton btnEnd = NewNWButton("End break now", BtnVariant.Danger, Theme.Danger, 0, false, 6, 0);
+            btnKeep.Font = (Font)Theme.UiSemibold(10f).Clone();
+            btnEnd.Font = (Font)Theme.UiSemibold(10f).Clone();
+            btnKeep.AccessibleName = "Keep the study break running";
+            btnEnd.AccessibleName = "End the study break now and resume protection";
             split.Controls.Add(btnKeep, 0, 0);
             split.Controls.Add(btnEnd, 1, 0);
 
             form.Card = card;
+            form.SubtitleLabel = subtitle;
             form.KeepButton = btnKeep;
             form.EndNow = false;
             btnKeep.Click += delegate { form.EndNow = false; form.Close(); };
@@ -1409,20 +1517,19 @@ namespace NW
             DateTime endInstant = expiresAt;
             int totalM = total;
 
-            // One update routine, invoked once up front and then on every
-            // tick, so the first painted frame already shows the real
-            // remaining time.
             Action update = delegate {
                 TimeSpan left = endInstant - DateTime.Now;
                 if (left.TotalSeconds < 0) left = TimeSpan.Zero;
                 int mins = (int)Math.Ceiling(left.TotalMinutes);
                 if (mins < 0) mins = 0;
-                // The time goes first. If anything below throws, the clock
-                // still shows the right time instead of going blank.
-                form.Card.TimeLabel.Text = endInstant.ToString("HH:mm:ss");
-                form.Card.Ring.CenterBig = mins.ToString();
+
+                timeLabel.Text = endInstant.ToString("HH:mm:ss");
+                if (form.SubtitleLabel != null) {
+                    form.SubtitleLabel.Text = "Break ends at " + endInstant.ToString("HH:mm:ss") + " (" + totalM + " min total)";
+                }
+                ring.CenterBig = mins.ToString();
                 double frac = left.TotalMinutes / totalM;
-                form.Card.Ring.Value = Math.Max(0.0, Math.Min(1.0, frac));
+                ring.Value = Math.Max(0.0, Math.Min(1.0, frac));
             };
 
             Timer timer = new Timer();
@@ -1433,6 +1540,12 @@ namespace NW
             form.Clock = timer;
             form.AcceptButton = btnKeep;
             form.CancelButton = btnKeep;
+            form.FormClosed += delegate {
+                if (form.Clock != null) {
+                    try { form.Clock.Stop(); form.Clock.Dispose(); } catch { }
+                    form.Clock = null;
+                }
+            };
             FitToContent(form, pad, HEADER_H, FORM_W);
             return form;
         }
@@ -1456,7 +1569,7 @@ namespace NW
 
             TableLayoutPanel pad = NewGrid(1);
             pad.BackColor = Theme.Bg;
-            pad.Padding = new Padding(22, 20, 22, 20);
+            pad.Padding = new Padding(22, 20, 22, 22);
             AddRow(outer, "Fill", 0);
             outer.Controls.Add(pad, 0, 1);
 
@@ -1473,7 +1586,7 @@ namespace NW
             hl.Margin = new Padding(0, 0, 0, 14);
             pad.Controls.Add(hl, 0, r);
 
-            r = AddRow(pad, "Abs", 170);
+            r = AddRow(pad, "Abs", 186);
             Card card = NewTimingCard("AUTO-OFF AT", timeLine, detail, footNote,
                 tint, ringBig, "MIN", 1.0);
             pad.Controls.Add(card, 0, r);
@@ -1489,6 +1602,161 @@ namespace NW
             form.CancelButton = btn;
             FitToContent(form, pad, HEADER_H, FORM_W);
             return form;
+        }
+    }
+
+    // ==================================================================
+    // Standalone high-performance executable entry point.
+    //
+    // Allows compiling NWCore.cs directly into StudyBreak.exe (winexe),
+    // opening the UI instantly (<50ms) without invoking the PowerShell
+    // runtime, while maintaining full compatibility when compiled as a DLL.
+    // ==================================================================
+    public static class Program
+    {
+        private static readonly string StatePath = @"C:\ProgramData\NightWatch\break_state.json";
+
+        [STAThread]
+        public static void Main(string[] args)
+        {
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+            Theme.DetectReducedMotion();
+
+            // Load brand artwork and window icon if present
+            try {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string assets = Path.Combine(baseDir, "assets");
+                string ico = Path.Combine(assets, "icon.ico");
+                if (File.Exists(ico)) {
+                    try { UI.SetIcon(new Icon(ico)); } catch { }
+                }
+                string iconPng = Path.Combine(assets, "icon.png");
+                if (File.Exists(iconPng)) {
+                    try {
+                        using (var raw = (Bitmap)Image.FromFile(iconPng)) {
+                            Bitmap tile = new Bitmap(128, 128, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                            using (Graphics g = Graphics.FromImage(tile)) {
+                                g.SmoothingMode = SmoothingMode.AntiAlias;
+                                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                                g.Clear(Color.Transparent);
+                                int d = 26;
+                                using (GraphicsPath clip = new GraphicsPath()) {
+                                    clip.AddArc(0, 0, d, d, 180, 90);
+                                    clip.AddArc(128 - d, 0, d, d, 270, 90);
+                                    clip.AddArc(128 - d, 128 - d, d, d, 0, 90);
+                                    clip.AddArc(0, 128 - d, d, d, 90, 90);
+                                    clip.CloseFigure();
+                                    g.SetClip(clip);
+                                    g.DrawImage(raw, new Rectangle(0, 0, 128, 128), new Rectangle(0, 0, raw.Width, raw.Height), GraphicsUnit.Pixel);
+                                }
+                            }
+                            Theme.SetBrandImage(tile);
+                        }
+                    } catch { }
+                }
+            } catch { }
+
+            // Check existing break state
+            bool isActive = false;
+            int durationMinutes = 30;
+            DateTime expiresAt = DateTime.Now.AddMinutes(30);
+            long bootUptimeMs = (long)Environment.TickCount;
+
+            if (File.Exists(StatePath)) {
+                try {
+                    string json = File.ReadAllText(StatePath);
+                    isActive = json.Contains("\"Active\": true") || json.Contains("\"Active\":true");
+                    if (isActive) {
+                        int uptimeIdx = json.IndexOf("\"BootUptimeMs\":");
+                        if (uptimeIdx >= 0) {
+                            string sub = json.Substring(uptimeIdx + 15).TrimStart(' ', ':');
+                            int end = 0;
+                            while (end < sub.Length && (char.IsDigit(sub[end]) || sub[end] == '-')) end++;
+                            long savedUptime;
+                            if (long.TryParse(sub.Substring(0, end), out savedUptime)) {
+                                if (savedUptime > bootUptimeMs) isActive = false;
+                            }
+                        }
+                        int expIdx = json.IndexOf("\"ExpiresAt\":");
+                        if (expIdx >= 0) {
+                            int q1 = json.IndexOf('"', expIdx + 12);
+                            if (q1 >= 0) {
+                                int q2 = json.IndexOf('"', q1 + 1);
+                                if (q2 > q1) {
+                                    string expStr = json.Substring(q1 + 1, q2 - q1 - 1);
+                                    DateTime exp;
+                                    if (DateTime.TryParse(expStr, out exp)) {
+                                        expiresAt = exp;
+                                        if (DateTime.Now > exp) isActive = false;
+                                    } else {
+                                        isActive = false;
+                                    }
+                                }
+                            }
+                        } else {
+                            isActive = false;
+                        }
+                        int durIdx = json.IndexOf("\"DurationMinutes\":");
+                        if (durIdx >= 0) {
+                            string sub = json.Substring(durIdx + 18).TrimStart(' ', ':');
+                            int end = 0;
+                            while (end < sub.Length && char.IsDigit(sub[end])) end++;
+                            int d;
+                            if (int.TryParse(sub.Substring(0, end), out d) && d > 0) durationMinutes = d;
+                        }
+                    }
+                } catch {
+                    isActive = false;
+                }
+            }
+
+            if (isActive) {
+                ActiveForm activeForm = UI.NewActiveForm(expiresAt, durationMinutes);
+                if (activeForm.Clock != null) activeForm.Clock.Start();
+                Application.Run(activeForm);
+
+                if (activeForm.EndNow) {
+                    SaveInactive();
+                    try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
+                }
+                return;
+            }
+
+            PickerForm picker = UI.NewPickerForm();
+            if (picker.Clock != null) picker.Clock.Start();
+            Application.Run(picker);
+
+            int minutes = picker.ChosenMinutes;
+            if (minutes < 1 || minutes > 1440) return;
+
+            DateTime newExpiry = DateTime.Now.AddMinutes(minutes);
+            SaveActive(minutes, newExpiry, bootUptimeMs);
+            try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
+        }
+
+        private static void SaveActive(int minutes, DateTime expiresAt, long uptime)
+        {
+            try {
+                string dir = Path.GetDirectoryName(StatePath);
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                string json = string.Format(
+                    "{{\r\n  \"Active\": true,\r\n  \"Timestamp\": \"{0:o}\",\r\n  \"Mode\": \"OnBreak\",\r\n  \"DurationMinutes\": {1},\r\n  \"ExpiresAt\": \"{2:o}\",\r\n  \"BootUptimeMs\": {3}\r\n}}",
+                    DateTime.Now, minutes, expiresAt, uptime);
+                File.WriteAllText(StatePath, json);
+            } catch { }
+        }
+
+        private static void SaveInactive()
+        {
+            try {
+                string dir = Path.GetDirectoryName(StatePath);
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                string json = string.Format(
+                    "{{\r\n  \"Active\": false,\r\n  \"Timestamp\": \"{0:o}\",\r\n  \"Mode\": \"Working\"\r\n}}",
+                    DateTime.Now);
+                File.WriteAllText(StatePath, json);
+            } catch { }
         }
     }
 }

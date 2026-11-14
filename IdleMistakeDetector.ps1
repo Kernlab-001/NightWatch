@@ -131,7 +131,7 @@ public class NightWatchLoudAlarm {
     /// <summary>Plays a full-volume square-wave tone. Returns false on failure.</summary>
     public static bool PlayTone(int frequency, int milliseconds) {
         IntPtr hWave = IntPtr.Zero;
-        GCHandle pin = GCHandle.Alloc(IntPtr.Zero);
+        GCHandle pin = default(GCHandle);
         try {
             WAVEFORMATEX fmt = new WAVEFORMATEX();
             fmt.wFormatTag = (ushort)WAVE_FORMAT_PCM;
@@ -158,9 +158,9 @@ public class NightWatchLoudAlarm {
                 buffer[i] = ((i / halfPeriod) % 2 == 0) ? (short)32767 : (short)-32768;
             }
 
-            GCHandle b = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            pin = GCHandle.Alloc(buffer, GCHandleType.Pinned);
             WAVEHDR hdr = new WAVEHDR();
-            hdr.lpData = b.AddrOfPinnedObject();
+            hdr.lpData = pin.AddrOfPinnedObject();
             hdr.dwBufferLength = (uint)(numSamples * sizeof(short));
             hdr.dwBytesRecorded = 0;
             hdr.dwUser = IntPtr.Zero;
@@ -170,13 +170,11 @@ public class NightWatchLoudAlarm {
             hdr.reserved = IntPtr.Zero;
 
             if (waveOutPrepareHeader(hWave, ref hdr, (uint)Marshal.SizeOf(typeof(WAVEHDR))) != 0) {
-                b.Free();
                 return false;
             }
 
             if (waveOutWrite(hWave, ref hdr, (uint)Marshal.SizeOf(typeof(WAVEHDR))) != 0) {
                 waveOutUnprepareHeader(hWave, ref hdr, (uint)Marshal.SizeOf(typeof(WAVEHDR)));
-                b.Free();
                 return false;
             }
 
@@ -189,7 +187,6 @@ public class NightWatchLoudAlarm {
 
             waveOutReset(hWave);
             waveOutUnprepareHeader(hWave, ref hdr, (uint)Marshal.SizeOf(typeof(WAVEHDR)));
-            b.Free();
             return true;
         } catch {
             return false;
@@ -369,6 +366,11 @@ if ($json -and [bool]$json.Active) {
             if (-not $clearReason) {
                 $clearReason = "Break expiry time unreadable. Break discarded for safety."
             }
+        }
+    } else {
+        $isBreakActive = $false
+        if (-not $clearReason) {
+            $clearReason = "Break state is missing an expiration timestamp. Break discarded for safety."
         }
     }
 }

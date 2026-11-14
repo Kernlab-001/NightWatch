@@ -12,14 +12,14 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 if (-not $isAdmin) {
     Write-Warning "Please run this script in an Administrator PowerShell window."
     Write-Host "Right-click PowerShell -> 'Run as Administrator', then execute this script again."
-    pause
+    if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) { pause }
     exit 1
 }
 
 $scriptDir = $PSScriptRoot
 if (-not $scriptDir) {
     Write-Warning "Could not determine script directory. Please run via .ps1 file path, not -Command."
-    pause
+    if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) { pause }
     exit 1
 }
 
@@ -117,7 +117,7 @@ try {
 } catch {}
 
 # 3. Create Desktop Shortcut
-Write-Host "`n[2/4] Creating 'Study Break' Desktop Shortcut with 3D Icon..." -ForegroundColor Yellow
+Write-Host "`n[3/4] Creating 'Study Break' Desktop Shortcut with 3D Icon..." -ForegroundColor Yellow
 $desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
 if (-not (Test-Path $desktopPath)) {
     $desktopPath = Join-Path $env:USERPROFILE "Desktop"
@@ -127,8 +127,18 @@ $shortcutPath = Join-Path $desktopPath "Study Break.lnk"
 try {
     $wshShell = New-Object -ComObject WScript.Shell
     $shortcut = $wshShell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = "powershell.exe"
-    $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$breakScriptPath`""
+    $exePath = Join-Path $scriptDir "StudyBreak.exe"
+    $vbsPath = Join-Path $scriptDir "StudyBreak.vbs"
+    if (Test-Path $exePath) {
+        $shortcut.TargetPath = $exePath
+        $shortcut.Arguments = ""
+    } elseif (Test-Path $vbsPath) {
+        $shortcut.TargetPath = "wscript.exe"
+        $shortcut.Arguments = "`"$vbsPath`""
+    } else {
+        $shortcut.TargetPath = "powershell.exe"
+        $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File `"$breakScriptPath`""
+    }
     $shortcut.WorkingDirectory = $scriptDir
     $customIconPath = Join-Path $scriptDir "assets\icon.ico"
     if (Test-Path $customIconPath) {
@@ -224,7 +234,11 @@ try {
         $allTasks = Get-ScheduledTask -ErrorAction SilentlyContinue
         foreach ($t in $allTasks) {
             if ($t.TaskName -eq $taskName) { continue }
-            $args = @($t.Actions | Where-Object { $_.Arguments -like "*SilentRunner.vbs*" } | ForEach-Object { $_.Arguments })
+            $args = @($t.Actions | Where-Object {
+                $_.Arguments -like "*SilentRunner.vbs*" -or
+                $_.Arguments -like "*IdleMistakeDetector.ps1*" -or
+                $_.Execute -like "*SilentRunner.vbs*"
+            } | ForEach-Object { $_.Arguments })
             if ($args.Count -eq 0) { continue }
             $runner = $args[0].Trim('"')
             if (Test-Path $runner) { continue }   # points at a runner that still exists
@@ -241,11 +255,16 @@ try {
     Write-Host " -> Task '$taskName' registered successfully in Task Scheduler!" -ForegroundColor Green
 
     # Prove the task points at THIS folder, so a move can never leave it stale.
-    $registered = (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue).Actions.Arguments
-    if ($registered -and $registered -notlike "*$silentRunnerPath*") {
+    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    $registered = $task.Actions.Arguments
+    if (-not $task) {
+        Write-Warning " -> Task '$taskName' was not found after registration."
+    } elseif ($registered -and $registered -notlike "*$silentRunnerPath*") {
         Write-Warning " -> Task points at '$registered' instead of '$silentRunnerPath'."
-    } else {
+    } elseif ($registered) {
         Write-Host " -> Verified: task runs '$silentRunnerPath'" -ForegroundColor Green
+    } else {
+        Write-Warning " -> Task '$taskName' was registered but has no valid action arguments."
     }
 } catch {
     Write-Warning " -> Failed to register scheduled task: $_"
