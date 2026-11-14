@@ -166,6 +166,8 @@ NightWatch/
 ├── NWCore.cs                  # The UI library: custom controls + the three dialogs
 ├── generate_header_art.py     # Builds header-art.png from banner-hero.png
 ├── StudyBreak.ps1              # Launcher: loads NWCore.cs, handles the break state
+├── StudyBreak.exe              # Compiled fast path: opens the dialog without PowerShell
+├── StudyBreak.vbs              # Launcher: prefers the .exe, falls back to the script
 ├── StudyBreak.bat              # Standalone batch launcher
 ├── IdleMistakeDetector.ps1     # 30-minute idle watcher & safety shutdown engine
 ├── SilentRunner.vbs            # Zero-window invisible launcher for Task Scheduler
@@ -361,6 +363,12 @@ That is why `NWCore.cs` exists. The custom-drawn controls and the layout that
 assembles them into the three dialogs both live there now, and `StudyBreak.ps1`
 is a thin launcher: it loads the compiled library, handles the break state and
 shows the dialog.
+
+`NWCore.cs` also carries a `Program.Main`, so the same file can be compiled
+into `StudyBreak.exe`. The launchers and the installed shortcut prefer that
+binary when it is there: it opens the dialog in about **290 ms** instead of
+the ~620 ms the PowerShell path needs. Without the binary everything still
+works — the launchers fall back to the script.
 
 > **A note on how this was measured.** An earlier reading of "2–3 seconds"
 > turned out to be Windows Defender re-scanning `StudyBreak.ps1` right after

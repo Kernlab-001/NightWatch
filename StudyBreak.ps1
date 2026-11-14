@@ -71,17 +71,17 @@ if (-not ('NW.Theme' -as [type])) {
     if (-not (Test-Path $coreFile)) {
         throw "NWCore.cs not found next to this script. NightWatch cannot start without it."
     }
-    $coreSource = [System.IO.File]::ReadAllText($coreFile)
 
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $hashBytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($coreSource + "|" + [System.Environment]::Version))
-    } finally {
-        $sha.Dispose()
+    $localApp = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } elseif ($env:USERPROFILE) { Join-Path $env:USERPROFILE "AppData\Local" } else { $env:TEMP }
+    $coreDir = Join-Path $localApp "NightWatch"
+    if (-not (Test-Path $coreDir)) {
+        try { New-Item -ItemType Directory -Path $coreDir -Force | Out-Null } catch {}
     }
-    $coreKey = ([System.BitConverter]::ToString($hashBytes) -replace '-', '').Substring(0, 16)
-    $coreDir = Join-Path $env:LOCALAPPDATA "NightWatch"
-    $coreDll = Join-Path $coreDir ("NW.Core.$coreKey.dll")
+
+    # Fast metadata cache: Length + LastWriteTimeUtc skips reading 70KB source & hashing SHA-256
+    $coreItem = [System.IO.FileInfo]::new($coreFile)
+    $coreKey = "{0:X8}_{1:X8}" -f $coreItem.Length, ($coreItem.LastWriteTimeUtc.Ticks -band 0xFFFFFFFF)
+    $coreDll = Join-Path $coreDir "NW.Core.$coreKey.dll"
 
     $loaded = $false
     if (Test-Path $coreDll) {
@@ -94,8 +94,8 @@ if (-not ('NW.Theme' -as [type])) {
         }
     }
     if (-not $loaded) {
+        $coreSource = [System.IO.File]::ReadAllText($coreFile)
         try {
-            if (-not (Test-Path $coreDir)) { New-Item -ItemType Directory -Path $coreDir -Force | Out-Null }
             Add-Type -ReferencedAssemblies System.Drawing, System.Windows.Forms `
                 -OutputAssembly $coreDll -OutputType Library -TypeDefinition $coreSource
             Add-Type -Path $coreDll
@@ -137,19 +137,20 @@ function Get-BrandImage {
     $iconPath = Join-Path $script:AssetsDir "icon.png"
     if (-not (Test-Path $iconPath)) { return $null }
     try {
-        $cacheDir = Join-Path $env:LOCALAPPDATA "NightWatch"
-        if (-not (Test-Path $cacheDir)) { New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null }
+        $localApp = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } elseif ($env:USERPROFILE) { Join-Path $env:USERPROFILE "AppData\Local" } else { $env:TEMP }
+        $cacheDir = Join-Path $localApp "NightWatch"
+        if (-not (Test-Path $cacheDir)) {
+            try { New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null } catch {}
+        }
 
-        $sha = [System.Security.Cryptography.SHA256]::Create()
-        try {
-            $bytes = [System.IO.File]::ReadAllBytes($iconPath)
-            $key = ([System.BitConverter]::ToString($sha.ComputeHash($bytes)) -replace '-', '').Substring(0, 12)
-        } finally { $sha.Dispose() }
+        # Fast metadata cache: Length + LastWriteTimeUtc skips reading 716KB & hashing SHA-256
+        $iconItem = [System.IO.FileInfo]::new($iconPath)
+        $iconKey = "{0:X8}_{1:X8}" -f $iconItem.Length, ($iconItem.LastWriteTimeUtc.Ticks -band 0xFFFFFFFF)
 
         # v3 is part of the name on purpose: the key covers the SOURCE image
         # only, so without a version tag a changed crop would keep serving
         # the stale tile from the cache.
-        $cached = Join-Path $cacheDir ("brand.v3.$key.png")
+        $cached = Join-Path $cacheDir ("brand.v3.$iconKey.png")
         if (Test-Path $cached) {
             try { return New-Object System.Drawing.Bitmap($cached) } catch {}
         }
@@ -194,29 +195,15 @@ function Get-BrandImage {
 $script:AppIcon = $null
 try {
     $icoPath = Join-Path $script:AssetsDir "icon.ico"
-    if (Test-Path $icoPath) { $script:AppIcon = New-Object System.Drawing.Icon($icoPath) }
+    if (Test-Path $icoPath) {
+        $script:AppIcon = New-Object System.Drawing.Icon($icoPath)
+        [NW.UI]::SetIcon($script:AppIcon)
+    }
 } catch {}
 
 try {
     $brand = Get-BrandImage
     if ($brand) { [NW.Theme]::SetBrandImage($brand) }
-} catch {}
-
-# The header art: the README hero banner re-graded into the app's palette,
-# drawn into the header band of every dialog. Unlike the brand tile this one
-# needs no cache - it is a 210x70 strip, so decoding it costs about the same
-# as reading it off disk, and a stale cached copy would be a bug rather than
-# a speed-up.
-try {
-    $artPath = Join-Path $script:AssetsDir "header-art.png"
-    if (Test-Path $artPath) {
-        $art = New-Object System.Drawing.Bitmap($artPath)
-        [NW.Theme]::SetHeaderArt($art)
-    }
-} catch {}
-
-try {
-    if ($script:AppIcon) { [NW.UI]::SetIcon($script:AppIcon) }
 } catch {}
 
 # ==================================================================
@@ -344,11 +331,6 @@ function Invoke-SelfTest {
 
     $f2 = [NW.UI]::NewActiveForm((Get-Date).AddMinutes(18), 30)
     Dump $f2 "nw-active.png"
-
-    $f3 = [NW.UI]::NewStatusForm("PAUSED", "Break started",
-        "Auto-shutdown is paused.", (Get-Date).AddMinutes(45).ToString("HH:mm:ss"),
-        "It turns itself off. You don't need to click again.", [NW.Theme]::Cyan, "45", "Got it")
-    Dump $f3 "nw-activated.png"
 }
 
 if ($SelfTest) {
@@ -396,11 +378,6 @@ if ($Capture) {
 
     $capActive = [NW.UI]::NewActiveForm((Get-Date).AddMinutes(18), 30)
     Grab $capActive "cap-active.png"
-
-    $capStatus = [NW.UI]::NewStatusForm("PAUSED", "Break started",
-        "Auto-shutdown is paused.", (Get-Date).AddMinutes(30).ToString("HH:mm:ss"),
-        "It turns itself off. You don't need to click again.", [NW.Theme]::Cyan, "45", "Got it")
-    Grab $capStatus "cap-activated.png"
     exit 0
 }
 
@@ -424,6 +401,9 @@ if (Test-Path $stateFile) {
                 try {
                     if ((Get-Date) -gt ([DateTime]$json.ExpiresAt)) { $valid = $false }
                 } catch { $valid = $false }
+            } elseif ($valid) {
+                # Missing ExpiresAt: invalid for safety
+                $valid = $false
             }
             $isActive = $valid
             if ($isActive) {
@@ -442,7 +422,9 @@ function Save-Inactive {
     } | ConvertTo-Json
     try {
         Set-Content -Path $stateFile -Value $state -Force
-    } catch {}
+    } catch {
+        Write-Warning "Could not save inactive state to $stateFile : $_"
+    }
 }
 
 # ==================================================================
@@ -461,11 +443,6 @@ if ($isActive) {
     if ($dlg.EndNow) {
         Save-Inactive
         try { [System.Media.SystemSounds]::Asterisk.Play() } catch {}
-        $s = [NW.UI]::NewStatusForm("PROTECTION ARMED", "Break ended early",
-            "Auto-shutdown is armed again.", (Get-Date).AddMinutes(30).ToString("HH:mm:ss"),
-            "30 minutes of no activity will shut the PC down again.", [NW.Theme]::Success, "30", "Back to studying")
-        $s.ShowDialog() | Out-Null
-        $s.Dispose()
     }
     exit 0
 }
@@ -500,12 +477,11 @@ $state = @{
     ExpiresAt = $expiresAt.ToString("o")
     BootUptimeMs = $bootUptimeMs
 } | ConvertTo-Json
-Set-Content -Path $stateFile -Value $state -Force
+try {
+    Set-Content -Path $stateFile -Value $state -Force
+} catch {
+    Write-Warning "Could not save break state to $stateFile : $_"
+}
 
 try { [System.Media.SystemSounds]::Asterisk.Play() } catch {}
-
-$done = [NW.UI]::NewStatusForm("PAUSED", "Break started",
-    "Auto-shutdown is paused.", $expiresAt.ToString("HH:mm:ss"),
-    "It turns itself off. You don't need to click again.", [NW.Theme]::Cyan, [string]$minutes, "Got it")
-$done.ShowDialog() | Out-Null
-$done.Dispose()
+exit 0
